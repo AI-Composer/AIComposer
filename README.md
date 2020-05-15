@@ -2,15 +2,17 @@
 
 A big homework or a big project? That's a question.
 
-# Folders
+## Folders
 
-```
+``` plain
 |--AI_COMPOSER
-   |--script        folder for incompleted scripts
+   |--Melody_LSTM   folder for melody lstm (Network 2)
+   |--VAE           folder for VAE (Nerwork 3)
    |--static        folder for static resources
-   |--README.md    
-``` 
+   |--README.md
+```
 
-# Timeline
+## Timeline
 
+Updated 5/15/2020
 ![gantt](static/gantt.png)
