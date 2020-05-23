@@ -167,10 +167,9 @@ class VAENet(nn.Module):
 
         distribution, outputs = self.forward(inputs)
         loss = self.loss_fn(inputs, outputs, distribution)
-        loss.backward()
 
         self.optimizer.zero_grad()
-
+        loss.backward()
         self.optimizer.step()
 
         self.step += 1
