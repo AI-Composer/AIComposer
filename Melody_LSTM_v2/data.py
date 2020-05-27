@@ -86,19 +86,25 @@ class DataLoader:
         with open(self.pickle_file, 'rb') as f:
             Sequences = pickle.load(f)
         batches = []
+        targets = []
         for seq in Sequences:
             batch = []
+            target = []
             for note in seq:
                 pitch_list = [0 for i in range(29)]
                 duration_list = [0 for i in range(12)]
                 pitch_list[int(note.pitchID)] = 1
                 duration_list[getDurationIndex(note.duration)] = 1
-                features = pitch_list + duration_list + nate.volume
+                features = pitch_list + duration_list + [note.volume]
                 batch.append([features])
+                target.append([int(note.pitchID) + 14, getDurationIndex(note.duration), note.volume])
             batch = torch.tensor(batch)
+            target = torch.tensor(target)
             batches.append(batch)
+            targets.append(target)
+
         
-        return batches
+        return batches, targets
 
 
 
