@@ -24,7 +24,7 @@ class DataLoader:
     """
     初始化后在训练时调用getBatches来得到格式化的训练数据
     """
-    def __init__(self, file_dir = 'simple_data', max_midi_num = None):
+    def __init__(self, file_dir = 'simple_data', max_midi_num = None, pickle_file = 'Sequences_intervel_1.pkl'):
         """
         if max_midi_num = None, it will get all the midi files in the given dir, or will only get in max_midi_num midi files
 
@@ -33,6 +33,7 @@ class DataLoader:
         """
         self.file_dir = file_dir
         self.max_midi_num = max_midi_num
+        self.pickle_file = pickle_file
     
     def split_transpose(self, Split_Interval):
         i = 0
@@ -81,9 +82,9 @@ class DataLoader:
             pickle.dump(Sequences, f)
         print("successfully dumped in ", Sequences_pickle)
 
-    def getBatches(self, pickle_file):
-        with open(pickle_file, 'rb') as f:
-        Sequences = pickle.load(f)
+    def getBatches(self):
+        with open(self.pickle_file, 'rb') as f:
+            Sequences = pickle.load(f)
         batches = []
         for seq in Sequences:
             batch = []
