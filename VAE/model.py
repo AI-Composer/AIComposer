@@ -23,8 +23,7 @@ class VAENet(nn.Module):
                  free_bits=0,
                  beta_rate=0,
                  max_beta=1,
-                 lr=0.001,
-                 repeat=8):
+                 lr=0.001):
         # TODO ADD support for layers
         super(VAENet, self).__init__()
         self.input_depth = input_depth
@@ -33,7 +32,6 @@ class VAENet(nn.Module):
         self.free_bits = free_bits
         self.beta_rate = beta_rate
         self.max_beta = max_beta
-        self.repeat = repeat
 
         self.step = 0
 
@@ -149,10 +147,10 @@ class VAENet(nn.Module):
                     track_num, x.size()))
         mu1, sigma1 = self.compose(x[:, :, :, 0],
                                    track=0) if control[0] else (0, 0)
-        mu2, sigma2 = self.compose(x[:, :, :, 0],
-                                   track=0) if control[0] else (0, 0)
-        mu3, sigma3 = self.compose(x[:, :, :, 0],
-                                   track=0) if control[0] else (0, 0)
+        mu2, sigma2 = self.compose(x[:, :, :, 1],
+                                   track=1) if control[1] else (0, 0)
+        mu3, sigma3 = self.compose(x[:, :, :, 2],
+                                   track=2) if control[2] else (0, 0)
         # This "mean" method is not reasonable at all!
         # But for compatness with 1 track input, we have no choice...
         mu = (mu1 + mu2 + mu3) / track_num
@@ -231,14 +229,17 @@ class VAENet(nn.Module):
         sequence = torch.stack((sequence1, sequence2, sequence3), dim=3)
         return (distribution, sequence)
 
-    def loss_fn(self, inputs, outputs, distribution):
+    def loss_fn(self, outputs, distribution, targets):
         """music VAE loss function, complicated, mainly KL_divergence
         Args:
-            inputs: [sequence_length, batch_size, input_depth, 3]
             outputs: [sequence_length, batch_size, input_depth, 3]
             distribution: torch.distributions.Normal
+            targets: [sequence_length, batch_size, 3, 3]
         Returns:
             loss: scalar
+            r_cost: scalar
+            beta: scalar
+            kl_cost: scalar
         """
         q_z = distribution
         p_z = ds.Normal(loc=torch.zeros([self.z_size]),
@@ -251,26 +252,63 @@ class VAENet(nn.Module):
             torch.max(input=(kl_div - free_nats), other=torch.zeros([1])))
 
         # musicVAE decoder loss function is too complicated, simplified here
-        # FIXME This function can be really unreasonable !!!
-        r_cost = torch.mean(F.mse_loss(inputs, outputs))
+        # FIXME Hard coding here
+        pitch_out = torch.flatten(torch.transpose(outputs[:, :, :29],
+                                                  dim0=2,
+                                                  dim1=3),
+                                  start_dim=0,
+                                  end_dim=-2)
+        duration_out = torch.flatten(torch.transpose(outputs[:, :, 29:41],
+                                                     dim0=2,
+                                                     dim1=3),
+                                     start_dim=0,
+                                     end_dim=-2)
+        volumn_out = outputs[:, :, 41]
+        pitch_target = torch.flatten(targets[:, :, 0]).to(torch.long)
+        duration_target = torch.flatten(targets[:, :, 1]).to(torch.long)
+        volumn_target = targets[:, :, 2].to(torch.float32)
+
+        pitch_cost = F.cross_entropy(pitch_out, pitch_target)
+        duration_cost = F.cross_entropy(duration_out, duration_target)
+        volumn_cost = F.mse_loss(volumn_out, volumn_target)
+
+        r_cost = (pitch_cost + duration_cost + volumn_cost) / 3
 
         # Now use a proper weight to balance between the two losses
         beta = ((1.0 - math.pow(self.beta_rate, float(self.step))) *
                 self.max_beta)
-        loss = torch.mean(r_cost) + beta * torch.mean(kl_cost)
-        return loss
+        r_cost = torch.mean(r_cost)
+        kl_cost = torch.mean(kl_cost)
+        loss = r_cost + beta * kl_cost
+        return (loss, r_cost, beta, kl_cost)
 
-    def train_batch(self, inputs):
+    def train_batch(self, inputs, targets, control=[1, 1, 1]):
         """training batch process demo
         Args:
-            inputs: [sequence_length, batch_size, input_depth, 3]
+            inputs: [sequence_length, batch_size, input_depth, track_num]
+            targets: [sequence_length, batch_size, 3, track_num]
         Returns:
             None
         """
         self.train()
+        self.repeat = int(inputs.size()[0] / self.section_length)
 
-        distribution, outputs = self.forward(inputs)
-        loss = self.loss_fn(inputs, outputs, distribution)
+        distribution, outputs = self.forward(inputs, control)
+
+        new_targets = []
+        idx = 0
+        for switch in control:
+            if switch:
+                new_targets.append(targets[:, :, :, idx])
+                idx += 1
+            else:
+                new_targets.append(torch.zeros(targets.size()[:3]))
+
+        targets = torch.stack(new_targets, dim=3)
+        assert targets.size()[3] == 3
+
+        loss, r_cost, beta, kl_cost = self.loss_fn(outputs, distribution,
+                                                   targets)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -278,28 +316,52 @@ class VAENet(nn.Module):
 
         self.step += 1
 
-        return loss
+        return (loss, r_cost, beta, kl_cost)
 
     def train_inputs(self,
                      inputs,
+                     targets,
+                     control=[1, 1, 1],
                      epoch_num=10,
-                     batch_size=600,
                      save=None,
                      print_frequency=1):
         """training process demo
         Args:
-            inputs: [total_size, sequence_length, input_depth, 3]
+            inputs: [batch_num, sequence_length, batch_size, input_depth, track_num]
+            targets: [batch_num, sequence_length, batch_size, 3, track_num]
         Returns:
             None
         """
         self.step = 0
-        inputs = torch.transpose(inputs, dim0=0, dim1=1)
-        batches = torch.split(inputs, batch_size, dim=1)
+        print(
+            "Training process start!\n",
+            "input shape {}, target shape {}, control {}, epoch_num {}, save to {}, print_frequency {}\n"
+            .format(inputs[0].size(), targets[0].size(), control, epoch_num,
+                    save, print_frequency),
+            "There are {} batches".format(len(inputs)))
         for epoch in range(epoch_num):
-            for batch in tqdm(batches):
-                loss = self.train_batch(batch)
+            for batch, target in tqdm(zip(inputs, targets)):
+                assert isinstance(
+                    batch, torch.Tensor), "input is not Tensor but {}".format(
+                        batch.__class__.__name__)
+                assert isinstance(
+                    target,
+                    torch.Tensor), "target is not Tensor but {}".format(
+                        target.__class__.__name__)
+                assert len(
+                    batch.size()) == 4, "wrong batch shape, got {}".format(
+                        batch.size())
+                assert len(
+                    target.size()) == 4, "wrong target shape, got {}".format(
+                        target.size())
+                loss, r_cost, beta, kl_cost = self.train_batch(
+                    batch, target, control)
+                print("epoch {}, loss: {}, r_cost: {}, beta: {}, kl_cost: {}".
+                      format(epoch, loss, r_cost, beta, kl_cost))
             if epoch % print_frequency == 0:
-                print("epoch {}, loss {}".format(epoch, loss))
+                print("epoch {}, loss: {}, r_cost: {}, beta: {}, kl_cost: {}".
+                      format(epoch, loss, r_cost, beta, kl_cost))
         if save is not None:
             assert isinstance(save, str), "save path must be string"
             torch.save(self, save)
+            print("model saved to {}".format(save))
