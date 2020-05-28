@@ -4,24 +4,28 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.distributions as ds
 
+from tqdm import tqdm
+import math
+
 
 class VAENet(nn.Module):
     """A really simplified demo of VAE net"""
     def __init__(self,
                  input_depth,
-                 section_length=48,
-                 encoder_size=2048,
+                 section_length=12,
+                 encoder_size=1024,
                  encoder_layers=1,
-                 decoder_size=1024,
-                 decoder_layers=2,
-                 z_size=512,
-                 conductor_size=1024,
-                 control_depth=512,
+                 decoder_size=512,
+                 decoder_layers=1,
+                 z_size=256,
+                 conductor_size=512,
+                 control_depth=256,
                  free_bits=0,
                  beta_rate=0,
                  max_beta=1,
                  lr=0.001,
-                 repeat=32):
+                 repeat=8):
+        # TODO ADD support for layers
         super(VAENet, self).__init__()
         self.input_depth = input_depth
         self.section_length = section_length
@@ -168,30 +172,30 @@ class VAENet(nn.Module):
             output: section output [sequence_length, batch_size, input_depth]
         """
         # The first note of the first section
-        control = torch.squeeze(conduct[0], dim=0)
+        control = torch.unsqueeze(conduct[0], dim=0)
         section_input = torch.cat(
             (torch.zeros([1, control.size()[1], self.input_depth]), control),
             dim=-1)
         _, (hidden_state, cell_state) = model(section_input)
-        new_note = torch.unsqueeze(fc(hidden_state), dim=0)
+        new_note = fc(hidden_state)
         output = new_note
         # The rest of the first section
         for j in range(self.section_length - 1):
-            section_input = torch.cat(new_note, control)
+            section_input = torch.cat((new_note, control), dim=-1)
             _, (hidden_state, cell_state) = model(section_input,
                                                   (hidden_state, cell_state))
-            new_note = torch.unsqueeze(fc(hidden_state), dim=0)
+            new_note = fc(hidden_state)
             output = torch.cat((output, new_note), dim=0)
         # The rest sections
         for i in range(1, self.repeat):
-            control = torch.squeeze(conduct[i], dim=0)
+            control = torch.unsqueeze(conduct[i], dim=0)
             # No more special first note needed
             for j in range(self.section_length):
-                section_input = torch.cat(new_note, control)
+                section_input = torch.cat((new_note, control), dim=-1)
                 _, (hidden_state,
                     cell_state) = model(section_input,
                                         (hidden_state, cell_state))
-                new_note = torch.unsqueeze(fc(hidden_state), dim=0)
+                new_note = fc(hidden_state)
                 output = torch.cat((output, new_note), dim=0)
         return output
 
@@ -213,19 +217,18 @@ class VAENet(nn.Module):
         z = torch.unsqueeze(z, dim=0)
         _, (hidden_state, cell_state) = self.conductor(z)
         z = self.fc2(hidden_state)
-        conduct = torch.unsqueeze(z, dim=0)
+        conduct = z
         # Enter loop
         for i in range(self.repeat - 1):
             _, (hidden_state,
                 cell_state) = self.conductor(z, (hidden_state, cell_state))
             z = self.fc2(hidden_state)
-            conduct = torch.cat((conduct, torch.unsqueeze(z, dim=0)), dim=0)
+            conduct = torch.cat((conduct, z), dim=0)
         # decode
-        for i in range(self.repeat):
-            sequence1 = self.__C_D_LOOP__(self.lstm1, self.fc4, conduct)
-            sequence2 = self.__C_D_LOOP__(self.lstm2, self.fc5, conduct)
-            sequence3 = self.__C_D_LOOP__(self.lstm3, self.fc6, conduct)
-            sequence = torch.stack((sequence1, sequence2, sequence3), dim=3)
+        sequence1 = self.__C_D_LOOP__(self.lstm1, self.fc4, conduct)
+        sequence2 = self.__C_D_LOOP__(self.lstm2, self.fc5, conduct)
+        sequence3 = self.__C_D_LOOP__(self.lstm3, self.fc6, conduct)
+        sequence = torch.stack((sequence1, sequence2, sequence3), dim=3)
         return (distribution, sequence)
 
     def loss_fn(self, inputs, outputs, distribution):
@@ -238,21 +241,22 @@ class VAENet(nn.Module):
             loss: scalar
         """
         q_z = distribution
-        p_z = ds.Normal(loc=[0.] * self.z_size, scale=[1.] * self.z_size)
+        p_z = ds.Normal(loc=torch.zeros([self.z_size]),
+                        scale=torch.ones([self.z_size]))
         kl_div = ds.kl_divergence(q_z, p_z)
         # allow some free bits
-        free_nats = self.free_bits * torch.log(2.0)
+        free_nats = self.free_bits * math.log(2.0)
         # this cost limit the encoder to approach a standard distribution for z
-        kl_cost = torch.mean(torch.max(kl_div - free_nats, 0))
+        kl_cost = torch.mean(
+            torch.max(input=(kl_div - free_nats), other=torch.zeros([1])))
 
         # musicVAE decoder loss function is too complicated, simplified here
         # FIXME This function can be really unreasonable !!!
         r_cost = torch.mean(F.mse_loss(inputs, outputs))
 
         # Now use a proper weight to balance between the two losses
-        beta = (
-            (1.0 - torch.pow(self.beta_rate, self.step.to(torch.float32))) *
-            self.max_beta)
+        beta = ((1.0 - math.pow(self.beta_rate, float(self.step))) *
+                self.max_beta)
         loss = torch.mean(r_cost) + beta * torch.mean(kl_cost)
         return loss
 
@@ -281,7 +285,6 @@ class VAENet(nn.Module):
                      epoch_num=10,
                      batch_size=600,
                      save=None,
-                     checkpoint=None,
                      print_frequency=1):
         """training process demo
         Args:
@@ -290,13 +293,13 @@ class VAENet(nn.Module):
             None
         """
         self.step = 0
-        shape = (int(inputs.size()[0] / batch_size), inputs.size()[1],
-                 batch_size, inputs.size()[2], 3)
         inputs = torch.transpose(inputs, dim0=0, dim1=1)
         batches = torch.split(inputs, batch_size, dim=1)
-        assert inputs.size() == shape
         for epoch in range(epoch_num):
-            for batch in batches:
+            for batch in tqdm(batches):
                 loss = self.train_batch(batch)
             if epoch % print_frequency == 0:
                 print("epoch {}, loss {}".format(epoch, loss))
+        if save is not None:
+            assert isinstance(save, str), "save path must be string"
+            torch.save(self, save)

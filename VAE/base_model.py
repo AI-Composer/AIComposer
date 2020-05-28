@@ -351,7 +351,7 @@ class hparams:
             z_size=32,
             free_bits=0.0,
             max_beta=1.0,
-            beta_rate=0.0,pytorch重复tensor
+            beta_rate=0.0,
             batch_size=512,
             grad_clip=1.0,
             clip_mode='global_norm',
