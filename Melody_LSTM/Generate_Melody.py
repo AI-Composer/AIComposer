@@ -3,6 +3,8 @@ import pickle
 import numpy as np
 import music21
 
+device = torch.device('cpu')
+
 def Generate_Melody_Notes(model,int2note_dict,network_input,length):
     random_index=np.random.randint(0, len(network_input) - 1)
     patten=network_input[random_index]
@@ -29,17 +31,18 @@ def Create_midi(melody):
         note.storedInstrument=music21.instrument.Piano()
         Notes.append(note)
     midi_stream=music21.stream.Stream(Notes)
-    midi_stream.write('midi', fp='output1.mid')
+    midi_stream.write('midi', fp='demos/output1.mid')
 
 
 
 if __name__ == "__main__":
-    model=torch.load('D:/学习/大四下/人工智能导论/HW/FINAL/code\model.pkl')
+    model=torch.load('Melody_LSTM\model_1857.pkl')
+    model = model.to(device)
     model=model.eval()
     with open('int2note_dict.file','rb') as f:
         int2note_dict=pickle.load(f)
     with open('networkinput.file','rb') as f:
         network_input=pickle.load(f)
     
-    melody=Generate_Melody_Notes(model,int2note_dict,network_input,100)
+    melody=Generate_Melody_Notes(model,int2note_dict,network_input,16)
     Create_midi(melody)

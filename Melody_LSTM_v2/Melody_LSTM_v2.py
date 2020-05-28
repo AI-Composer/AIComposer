@@ -27,8 +27,8 @@ class MelodyLSTM(nn.Module):
         self.softmax_d = nn.Softmax(dim=2)
     
     def forward(self,x):
-        x.to(device)
-        x,_=self.LSTM(x)
+        x = torch.tensor(x, dtype=torch.float32).to(device)
+        x,_=self.LSTM(x) 
         #s, b, h = x.shape  # x is output, size (seq_len, batch, hidden_size)
         #x = x.view(s*b, h)
         #print(x.size())
@@ -72,12 +72,10 @@ class MelodyLSTM(nn.Module):
                 target_d = target[:,1].view((L,)).to(device,dtype=torch.int64)
                 target_v = target[:,2].view((L,)).to(device,dtype=torch.int64)
 
-                Loss = F.cross_entropy(pitch, target_p)
-                #  + F.cross_entropy(duration, target_d) + F.mse_loss(volume, target_v)
-
+                Loss = F.cross_entropy(pitch, target_p) + F.cross_entropy(duration, target_d) # + F.mse_loss(volume, target_v)
                 Loss.backward()
                 self.optimizer.step()
-                if batch_idx % 50 == 0:
+                if batch_idx % 10 == 0:
                     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.4f}'.format(
                         epoch, batch_idx, len(batches),
                         100. * batch_idx / len(batches), Loss.item()))
