@@ -105,20 +105,16 @@ def sequences_to_midis(sequences,
     """Create midis from Tensor, most compatitive verson
        NOW PATH IS FIXED TO outputs/
     Args:
-        tensor: torch.Tensor, [total_num, 3, sequence_length, 3]
+        tensor: list of torch.Tensor, [total_num, 3, sequence_length, 3]
         split_interval: scalar, indicates the frequency of notes on reconstruction
         tune: str, 'X xxxxx', 'E minor', etc
         folder: str, folder to save midis
     Returns:
         None
     """
-    assert isinstance(sequences,
-                      torch.Tensor), "wrong sequences class, got {}".format(
-                          sequences.__class__.__name__)
-    assert len(
-        sequences.size()) == 4 and sequences.size()[1] == 3 and sequences.size(
-        )[3] == 3, "wrong sequence shape, got {}".format(sequences.size())
-    logger.info("{} midis to create".format(sequences.size()[0]))
+    assert isinstance(sequences, list), "wrong sequences class, got {}".format(
+        sequences.__class__.__name__)
+    logger.info("{} midis to create".format(len(sequences)))
     # create folder if None
     if folder is None:
         rq = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
@@ -195,7 +191,8 @@ def midis_to_sequences(folder, total_num=None, split_interval=1):
                    `min(num_of_midis, total_num)`
         split_interval: int
     Returns:
-        tensor: torch.Tensor, [total_num, 3, sequence_length, 3]
+        tensor: list of torch.Tensor, [total_num, 3, sequence_length, 3]
+                Different sequences will have different sequence_length
     """
     logger.info(
         "Prepare to create tensor from midis, folder {}".format(folder))
@@ -209,6 +206,5 @@ def midis_to_sequences(folder, total_num=None, split_interval=1):
             break
         filepath = os.path.join(folder, filename)
         sequences.append(midi_to_sequence(filepath, split_interval))
-    sequences = torch.stack(sequences, dim=0)
 
     logger.info("Creation completed.")
