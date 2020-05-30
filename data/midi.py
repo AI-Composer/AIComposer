@@ -5,7 +5,6 @@ import torch
 import music21
 from tqdm import tqdm
 
-from util.decorators import changed
 from util.logging import logger
 
 major_list = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6]
@@ -15,23 +14,25 @@ minor_list_r = [0, 2, 3, 5, 7, 8, 10]
 duration_list = [
     0.0, 0.25, 1 / 3, 0.5, 2 / 3, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0
 ]
-duration_dict = {
-    0.0: 0,
-    0.25: 1,
-    1 / 3: 2,
-    0.5: 3,
-    2 / 3: 4,
-    0.75: 5,
-    1.0: 6,
-    1.5: 7,
-    2.0: 8,
-    2.5: 9,
-    3.0: 10,
-    4.0: 11
-}
 
 
-@changed('Li')
+def __get_duration_index__(quarter_length):
+    """Helper function for getting the scalar duration index
+       ****************************************************
+       For safety, DON'T call this function from outside!!!
+       ****************************************************
+    Args:
+        quarter_length: music21.note.Note.quarterLength, float-like
+    Returns:
+        index: int
+    """
+    for index, duration in enumerate(duration_list):
+        if quarter_length - duration < 0.01:
+            return index
+    logger.error("duration not in list! got {}".format(quarter_length))
+    exit()
+
+
 def sequence_to_midi(sequence,
                      split_interval=1,
                      tune='E minor',
@@ -51,9 +52,8 @@ def sequence_to_midi(sequence,
     assert isinstance(sequence,
                       torch.Tensor), "wrong sequence class, got {}".format(
                           sequence.__class__.__name__)
-    assert len(
-        sequence.size()) == 3 and sequence.size()[0] == 3 and sequence.size(
-        )[2] == 3, "wrong sequence shape, got {}".format(sequence.size())
+    assert sequence.dim() == 3 and sequence.size()[0] == 3 and sequence.size(
+    )[2] == 3, "wrong sequence shape, got {}".format(sequence.size())
     # Part1: Get correct parameters
     standard_ps = music21.key.Key(tune.split(" ")[0]).tonic.ps
     mode = tune.split(" ")[1]
@@ -72,10 +72,14 @@ def sequence_to_midi(sequence,
         rq = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
         logger.warning(
             "folder name not assigned, will use current time {}".format(rq))
-        folder = os.path.dirname(os.getcwd()) + '/outputs/' + rq
+        folder = 'outputs/' + rq
+    if not os.path.exists(folder):
+        os.mkdir(folder)
     if name is None:
-        name = hash(time.time())
-    path = folder + name
+        name = str(hash(time.time()))
+    if name[-4:] != '.mid':
+        name = name + '.mid'
+    path = os.path.join(folder, name)
 
     # Part2: Analyse sequence information
     # FIXME So far only lead track is created
@@ -84,12 +88,12 @@ def sequence_to_midi(sequence,
     for note in lead_track:
         # Decide ps
         p = music21.pitch.Pitch()
-        octave, delta = divmod(note[0], 7)
+        octave, delta = divmod(int(note[0]), 7)
         p.ps = standard_ps + 12 * octave + ps_list[int(delta)]
         # Decide offset and duration
         new_note = music21.note.Note(p)
         new_note.offset = offset
-        new_note.duration.quarterLength = duration_list(note[1])
+        new_note.duration.quarterLength = duration_list[int(note[1])]
         # FIXME So far no volume information converted?
         stream.insert(offset, new_note)
         offset += split_interval
@@ -120,14 +124,19 @@ def sequences_to_midis(sequences,
         rq = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
         logger.warning(
             "folder name not assigned, will use current time {}".format(rq))
-        folder = os.path.dirname(os.getcwd()) + '/outputs/' + rq
+        folder = 'outputs/' + rq
+    if not os.path.exists(folder):
+        os.mkdir(folder)
     # Enter main loop
-    for num, sequence in tqdm(enumerate(sequences)):
-        sequence_to_midi(sequence, split_interval, tune, folder, name=str(num))
+    for num, sequence in tqdm(enumerate(sequences), total=len(sequences)):
+        sequence_to_midi(sequence,
+                         split_interval,
+                         tune,
+                         folder,
+                         name=str(num) + '.mid')
     logger.info("Midi creation completed")
 
 
-@changed('Li')
 def midi_to_sequence(filepath, split_interval=1):
     """Create sequence from midi file, using music21 and torch
     Args:
@@ -176,10 +185,10 @@ def midi_to_sequence(filepath, split_interval=1):
                 logger.warning(
                     "note not in your chosen tonality! got {}".format(delta))
             step = octave * 7 + step_list[delta]
-        # FIXME now the chord and drum tracks are set to zeros
-        sequence[0][index][0] = step
-        sequence[0][index][1] = duration_dict(note.quarterLength)
-        sequence[0][index][2] = note.volume.getRealized()
+            # FIXME now the chord and drum tracks are set to zeros
+            sequence[0][index][0] = step
+            sequence[0][index][1] = __get_duration_index__(note.quarterLength)
+            sequence[0][index][2] = note.volume.getRealized()
     return sequence
 
 
@@ -201,10 +210,10 @@ def midis_to_sequences(folder, total_num=None, split_interval=1):
     filenames = os.listdir(folder)
     sequences = []
     # Enter main loop
-    for count, filename in enumerate(filenames):
+    for count, filename in tqdm(enumerate(filenames), total=len(filenames)):
         if total_num is not None and count >= total_num:
             break
         filepath = os.path.join(folder, filename)
         sequences.append(midi_to_sequence(filepath, split_interval))
-
     logger.info("Creation completed.")
+    return sequences
