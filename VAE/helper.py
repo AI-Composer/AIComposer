@@ -1,7 +1,8 @@
 from VAE.model import VAENet
 
 
-def train(model, loader, epoch_num=10, batch_size=600, save=None):
+def train(model, loader, epoch_num=10, batch_num=600, save=None,
+          summary=False):
     """Helper function for training
     Args:
         model: VAENet
@@ -14,15 +15,20 @@ def train(model, loader, epoch_num=10, batch_size=600, save=None):
         VAENet), "VAE train method requires a VAE network, got {}".format(
             model.__class__.__name__)
     inputs, targets = loader.getBatches_1()
-    if len(inputs) > batch_size:
-        inputs = inputs[:batch_size]
-    if len(targets) > batch_size:
-        targets = targets[:batch_size]
+    assert len(inputs) > batch_num
+    t_inputs = inputs[batch_num]
+    inputs = inputs[:batch_num]
+    assert len(targets) > batch_num
+    t_targets = targets[batch_num]
+    targets = targets[:batch_num]
     model.train_inputs(inputs,
                        targets,
+                       t_inputs,
+                       t_targets,
                        control=[1, 0, 0],
                        epoch_num=epoch_num,
-                       save=save)
+                       save=save,
+                       summary=summary)
 
 
 def compose(model, section):

@@ -62,7 +62,6 @@ class DataLoader:
             key = stream.analyze('key')
             print(stream[0].name, key.name)
 
-            timeSignature = stream[1]
             notes = stream[2:]
             tonicID = key.tonic.ps
 
@@ -178,9 +177,9 @@ def getPS(tonicID, tonality, step):
 
     octave, delta = divmod(step, 7)
     if tonality == 'major':
-        return tonicID + 12 * step + major_list_r[int(delta)]
+        return tonicID + 12 * octave + major_list_r[int(delta)]
     else:
-        return tonicID + 12 * step + minor_list_r[int(delta)]
+        return tonicID + 12 * octave + minor_list_r[int(delta)]
 
 
 if __name__ == '__main__':

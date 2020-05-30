@@ -6,6 +6,8 @@ import torch.distributions as ds
 
 from tqdm import tqdm
 import math
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class VAENet(nn.Module):
@@ -321,14 +323,19 @@ class VAENet(nn.Module):
     def train_inputs(self,
                      inputs,
                      targets,
+                     t_inputs,
+                     t_targets,
                      control=[1, 1, 1],
                      epoch_num=10,
                      save=None,
-                     print_frequency=1):
+                     print_frequency=1,
+                     summary=False):
         """training process demo
         Args:
             inputs: [batch_num, sequence_length, batch_size, input_depth, track_num]
             targets: [batch_num, sequence_length, batch_size, 3, track_num]
+            t_inputs: [sequence_length, batch_size, input_depth, track_num]
+            t_targets: [sequence_length, batch_size, 3, track_num]
         Returns:
             None
         """
@@ -339,6 +346,8 @@ class VAENet(nn.Module):
             .format(inputs[0].size(), targets[0].size(), control, epoch_num,
                     save, print_frequency),
             "There are {} batches".format(len(inputs)))
+        if summary:
+            summary_list = []
         for epoch in range(epoch_num):
             for batch, target in tqdm(zip(inputs, targets)):
                 assert isinstance(
@@ -356,12 +365,74 @@ class VAENet(nn.Module):
                         target.size())
                 loss, r_cost, beta, kl_cost = self.train_batch(
                     batch, target, control)
-                print("epoch {}, loss: {}, r_cost: {}, beta: {}, kl_cost: {}".
-                      format(epoch, loss, r_cost, beta, kl_cost))
             if epoch % print_frequency == 0:
-                print("epoch {}, loss: {}, r_cost: {}, beta: {}, kl_cost: {}".
-                      format(epoch, loss, r_cost, beta, kl_cost))
+                self.eval()
+                self.repeat = int(t_inputs.size()[0] / self.section_length)
+
+                t_distribution, t_outputs = self.forward(t_inputs, control)
+
+                new_t_targets = []
+                idx = 0
+                for switch in control:
+                    if switch:
+                        new_t_targets.append(t_targets[:, :, :, idx])
+                        idx += 1
+                    else:
+                        new_t_targets.append(torch.zeros(t_targets.size()[:3]))
+
+                t_targets = torch.stack(new_t_targets, dim=3)
+                assert t_targets.size()[3] == 3
+
+                t_loss, t_r_cost, t_beta, t_kl_cost = self.loss_fn(
+                    t_outputs, t_distribution, t_targets)
+                print(
+                    "Train losses: epoch {}, loss: {}, r_cost: {}, beta: {}, kl_cost: {}"
+                    .format(epoch, loss, r_cost, beta, kl_cost))
+                print(
+                    "Test losses:  epoch {}, loss: {}, r_cost: {}, beta: {}, kl_cost: {}"
+                    .format(epoch, t_loss, t_r_cost, t_beta, t_kl_cost))
+
+                if summary:
+                    summary_list.append([
+                        epoch, loss, r_cost, kl_cost, t_loss, t_r_cost,
+                        t_kl_cost, beta
+                    ])
         if save is not None:
             assert isinstance(save, str), "save path must be string"
             torch.save(self, save)
             print("model saved to {}".format(save))
+        summary_list = np.array(summary_list)
+        if summary:
+            fig = plt.figure(figsize=(20, 10))
+            ax = fig.add_subplot(1, 1, 1)
+            ax.plot(summary_list[:, 0],
+                    summary_list[:, 1],
+                    'r',
+                    label='train loss')
+            ax.plot(summary_list[:, 0],
+                    summary_list[:, 3],
+                    'm',
+                    label='train kl_div')
+            ax.plot(summary_list[:, 0],
+                    summary_list[:, 4],
+                    'b',
+                    label='test loss')
+            ax.plot(summary_list[:, 0],
+                    summary_list[:, 6],
+                    'g',
+                    label='train kl_div')
+            font1 = {
+                'family': 'Times New Roman',
+                'weight': 'normal',
+                'size': 26,
+            }
+            ax.set_xlabel("epoch", font1)
+            ax.set_ylabel("loss", font1)
+            ax.set_title("Training loss", font1)
+            font2 = {
+                'family': 'Times New Roman',
+                'weight': 'normal',
+                'size': 20,
+            }
+            ax.legend(prop=font2)
+            plt.show()
