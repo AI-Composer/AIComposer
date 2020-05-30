@@ -1,3 +1,5 @@
+import random
+
 import torch
 from tqdm import tqdm
 
@@ -38,8 +40,8 @@ def tensor_to_sequence(tensor):
             tensor.__class__.__name__)
     assert tensor.dim() == 3 and tensor.size()[0] == 3 and tensor.size(
     )[2] == 42, "invalid input shape, got {}".format(tensor.size())
-    pitch = torch.argmax(tensor[0, :, :29], dim=-1)
-    duration = torch.argmax(tensor[0, :, 29:41], dim=-1)
+    pitch = torch.argmax(tensor[0, :, :29], dim=-1).to(torch.float32)
+    duration = torch.argmax(tensor[0, :, 29:41], dim=-1).to(torch.float32)
     volume = tensor[0, :, 41]
     sequence = torch.stack((pitch, duration, volume), dim=-1)
     return sequence
@@ -257,6 +259,8 @@ def getBatches(inputs, lead_only=False, mode='BATCH_NUM', **kwargs):
     Returns:
         batches: list of torch.Tensor, [batch_num, 3, sequence_length, batch_size, 42]
                  if `lead_only == True`, will sized [batch_num, sequence_length, batch_size, 42]
+        targets: list of torch.Tensor, [batch_num, 3, sequence_length, batch_size, 3]
+                 if `lead_only == True`, will sized [batch_num, sequence_length, batch_size, 3]
         batch_size: int, result batch size
     """
     assert isinstance(inputs, list), "input must be list, got {}".format(
@@ -271,8 +275,19 @@ def getBatches(inputs, lead_only=False, mode='BATCH_NUM', **kwargs):
     else:
         logger.error("wrong input size, got {}".format(clue))
         exit()
+    random.shuffle(batches)
+    # Create targets from batches
+    targets = []
+    for batch in batches:
+        pitch = torch.argmax(batch[:, :, :, :29], dim=-1).to(torch.float32)
+        duration = torch.argmax(batch[:, :, :, 29:41],
+                                dim=-1).to(torch.float32)
+        volume = batch[:, :, :, 41]
+        target = torch.stack([pitch, duration, volume], dim=-1)
+        targets.append(target)
     # select lead track if assigned
     if lead_only:
         logger.info("lead_only assigned! now returns only lead track")
         batches = [batch[0] for batch in batches]
-    return (batches, batch_size)
+        targets = [target[0] for target in targets]
+    return (batches, targets, batch_size)
