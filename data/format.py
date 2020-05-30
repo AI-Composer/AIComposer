@@ -237,13 +237,14 @@ def sequences_to_batches(sequences, mode='BATCH_NUM', **kwargs):
     return (batches, batch_size)
 
 
-def getBatches(inputs, mode='BATCH_NUM', **kwargs):
+def getBatches(inputs, lead_only=False, mode='BATCH_NUM', **kwargs):
     """Lazyman API for both tensors and sequences
     This function requires an important `mode` parameter, which controls the batch process
     This fuction gurantee sequence_length are the same within a batch
     Args:
         inputs: list of torch.Tensor, [total_num, 3, sequence_length, 3]
                                    or [total_num, 3, sequence_length, 42]
+        lead_only: bool, whether to output only the leading track
         mode: str, mode control
               'BATCH_NUM': DEFAULT, function will try to satisfy batch number
                            if necessary, some short sequences will be padded
@@ -255,6 +256,7 @@ def getBatches(inputs, mode='BATCH_NUM', **kwargs):
                           by default, tolorance will be 0
     Returns:
         batches: list of torch.Tensor, [batch_num, 3, sequence_length, batch_size, 42]
+                 if `lead_only == True`, will sized [batch_num, sequence_length, batch_size, 42]
         batch_size: int, result batch size
     """
     assert isinstance(inputs, list), "input must be list, got {}".format(
@@ -269,4 +271,8 @@ def getBatches(inputs, mode='BATCH_NUM', **kwargs):
     else:
         logger.error("wrong input size, got {}".format(clue))
         exit()
+    # select lead track if assigned
+    if lead_only:
+        logger.info("lead_only assigned! now returns only lead track")
+        batches = [batch[0] for batch in batches]
     return (batches, batch_size)
