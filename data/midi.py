@@ -1,4 +1,3 @@
-import pickle
 import os
 import time
 
@@ -41,7 +40,7 @@ def sequence_to_midi(sequence,
     """Create one midi from Tensor
        NOW PATH IS FIXED TO outputs/
     Args:
-        sequence: torch.Tensor, [sequence_length, 3, 3]
+        sequence: torch.Tensor, [3, sequence_length, 3]
         split_interval: scalar, indicates the frequency of notes on reconstruction
         tune: str, 'X xxxxx', 'E minor', etc
         folder: str, folder to save midis
@@ -49,6 +48,12 @@ def sequence_to_midi(sequence,
     Returns:
         None
     """
+    assert isinstance(sequence,
+                      torch.Tensor), "wrong sequence class, got {}".format(
+                          sequence.__class__.__name__)
+    assert len(
+        sequence.size()) == 3 and sequence.size()[0] == 3 and sequence.size(
+        )[2] == 3, "wrong sequence shape, got {}".format(sequence.size())
     # Part1: Get correct parameters
     standard_ps = music21.key.Key(tune.split(" ")[0]).tonic.ps
     mode = tune.split(" ")[1]
@@ -74,7 +79,7 @@ def sequence_to_midi(sequence,
 
     # Part2: Analyse sequence information
     # FIXME So far only lead track is created
-    lead_track = sequence[:, :, 0]
+    lead_track = sequence[0, :, :]
     offset = 0
     for note in lead_track:
         # Decide ps
@@ -100,19 +105,27 @@ def sequences_to_midis(sequences,
     """Create midis from Tensor, most compatitive verson
        NOW PATH IS FIXED TO outputs/
     Args:
-        tensor: torch.Tensor, [total_num, sequence_length, 3, 3]
+        tensor: torch.Tensor, [total_num, 3, sequence_length, 3]
         split_interval: scalar, indicates the frequency of notes on reconstruction
         tune: str, 'X xxxxx', 'E minor', etc
         folder: str, folder to save midis
     Returns:
         None
     """
+    assert isinstance(sequences,
+                      torch.Tensor), "wrong sequences class, got {}".format(
+                          sequences.__class__.__name__)
+    assert len(
+        sequences.size()) == 4 and sequences.size()[1] == 3 and sequences.size(
+        )[3] == 3, "wrong sequence shape, got {}".format(sequences.size())
     logger.info("{} midis to create".format(sequences.size()[0]))
+    # create folder if None
     if folder is None:
         rq = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
         logger.warning(
             "folder name not assigned, will use current time {}".format(rq))
         folder = os.path.dirname(os.getcwd()) + '/outputs/' + rq
+    # Enter main loop
     for num, sequence in tqdm(enumerate(sequences)):
         sequence_to_midi(sequence, split_interval, tune, folder, name=str(num))
     logger.info("Midi creation completed")
@@ -125,7 +138,7 @@ def midi_to_sequence(filepath, split_interval=1):
         filepath: str, full or relative file path
         split_interval: int
     Returns:
-        sequence: torch.Tensor, [sequence_length, 3, 3]
+        sequence: torch.Tensor, [3, sequence_length, 3]
     """
     stream = music21.converter.parse(filepath)
     instru = music21.instrument.partitionByInstrument(stream)
@@ -155,7 +168,7 @@ def midi_to_sequence(filepath, split_interval=1):
     notes = stream[2:]
     tot_time = float(notes[-1].offset) + float(notes[-1].quarterLength)
     sequence_len = int(tot_time / split_interval + 1)
-    sequence = torch.zeros([sequence_len, 3], dtype=torch.float32)
+    sequence = torch.zeros([3, sequence_len, 3], dtype=torch.float32)
 
     # Enter main loop
     for note in notes:
@@ -167,12 +180,10 @@ def midi_to_sequence(filepath, split_interval=1):
                 logger.warning(
                     "note not in your chosen tonality! got {}".format(delta))
             step = octave * 7 + step_list[delta]
-        sequence[index][0] = step
-        sequence[index][1] = duration_dict(note.quarterLength)
-        sequence[index][2] = note.volume.getRealized()
-    # FIXME now the chord and drum tracks are set to zeros
-    sequence = sequence.unsqueeze(dim=2)
-    sequence = torch.cat((sequence, torch.zeros([sequence_len, 3, 2])), dim=2)
+        # FIXME now the chord and drum tracks are set to zeros
+        sequence[0][index][0] = step
+        sequence[0][index][1] = duration_dict(note.quarterLength)
+        sequence[0][index][2] = note.volume.getRealized()
     return sequence
 
 
@@ -184,7 +195,7 @@ def midis_to_sequences(folder, total_num=None, split_interval=1):
                    `min(num_of_midis, total_num)`
         split_interval: int
     Returns:
-        tensor: torch.Tensor, [total_num, sequence_length, 3, 3]
+        tensor: torch.Tensor, [total_num, 3, sequence_length, 3]
     """
     logger.info(
         "Prepare to create tensor from midis, folder {}".format(folder))
