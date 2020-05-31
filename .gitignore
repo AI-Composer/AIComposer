@@ -1,6 +1,8 @@
 .vscode
-__pycache__
-magenta
-.ipynb_checkpoints
 .vs
+.ipynb_checkpoints
+__pycache__
+/saves/*
+/logs/*
+/outputs/*
 bigdata

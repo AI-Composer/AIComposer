@@ -1,10 +1,6 @@
-import os
-import pickle
 import torch
-import torch.nn as nn
 import music21
-from Melody_LSTM_v2 import MelodyLSTM
-from data import *
+from .data import *
 import time
 
 tune = 'E minor'
@@ -13,13 +9,14 @@ Sequence_length = 64
 
 device = torch.device('cuda')
 
+
 def generateMelody(model_file=default_model):
     """
     生成一个我们定义的Sequence序列
     """
     model = torch.load(model_file)
     model = model.to(device)
-    
+
     Sequence = [MyNote(0, 1, 0.7)]
     for note_idx in range(1, Sequence_length):  # 指生成第几个音
         batch = []
@@ -40,12 +37,17 @@ def generateMelody(model_file=default_model):
         duration = duration.view((note_idx, 12))
         pitches = torch.argmax(pitch, dim=1)
         ds = torch.argmax(duration, dim=1)
-        new_note = MyNote(pitches[-1].item()-14, durations[ds[-1].item()], 0.7)
+        new_note = MyNote(pitches[-1].item() - 14, durations[ds[-1].item()],
+                          0.7)
         Sequence.append(new_note)
 
     return Sequence
 
-def createMidi(Sequence, split_interval=1, output_file='./demos/cminor.mid', tune=tune):
+
+def createMidi(Sequence,
+               split_interval=1,
+               output_file='./demos/cminor.mid',
+               tune=tune):
     """
     根据Sequence生成对应调式的midi
     """
@@ -69,6 +71,8 @@ def createMidi(Sequence, split_interval=1, output_file='./demos/cminor.mid', tun
     print("successfully written in ", output_file)
     stream.show('text')
 
+
 if __name__ == '__main__':
     new_seq = generateMelody()
-    createMidi(new_seq, output_file = './demos/'+tune+str(time.time())+'.mid')
+    createMidi(new_seq,
+               output_file='./demos/' + tune + str(time.time()) + '.mid')
