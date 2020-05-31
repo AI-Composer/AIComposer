@@ -1,6 +1,8 @@
 .vscode
 .vs
+.ipynb_checkpoints
 __pycache__
 /saves/*
 /logs/*
 /outputs/*
+bigdata

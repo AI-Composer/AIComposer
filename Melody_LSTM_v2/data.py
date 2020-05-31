@@ -126,14 +126,12 @@ class DataLoader:
             for note in seq:
                 pitch_list = [0.0 for i in range(29)]
                 duration_list = [0.0 for i in range(12)]
-                pitch_list[int(note.pitchID)] = 1.0
+                if int(note.pitchID) + 14 > 0 and int(note.pitchID) + 14 < 28:
+                    pitch_list[int(note.pitchID) + 14] = 1.0
                 duration_list[getDurationIndex(note.duration)] = 1.0
                 features = pitch_list + duration_list + [note.volume]
                 batch.append([features])
-                target.append([
-                    int(note.pitchID) + 14,
-                    getDurationIndex(note.duration), note.volume
-                ])
+                target.append([int(note.pitchID) + 14, getDurationIndex(note.duration), note.volume])
             batch = torch.tensor(batch, requires_grad=True)
             target = torch.tensor(target)
             batches.append(batch)
@@ -157,7 +155,7 @@ def getStep(noteID, tonicID, tonality):
     """
 
     octave, delta = divmod((noteID - tonicID), 12)
-    if tonality == 'major':
+    if mode == 'major':
         if delta in {1, 3, 6, 8, 10}:
             print("not in tonality warning!")
         return octave * 7 + major_list[int(delta)]

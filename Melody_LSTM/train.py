@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import pickle
 
+device = torch.device('cuda')
+
 def train(filepath,batch_size,turn):
     Notes=GetData.GetNotes_Melody(filepath)
     Notes_reshape=[]   #因为set不能对多层嵌套列表作用，所以先把它压平
@@ -28,7 +30,7 @@ def train(filepath,batch_size,turn):
     network_input=np.reshape(network_input, (len(network_input), sequence_length, 1))
     with open('networkinput.file','wb') as f:
         pickle.dump(network_input,f)
-    model=GetModel.MelodyLSTM(Notes_Num)   #网络inputsize=1，输出维数为1
+    model=GetModel.MelodyLSTM(Notes_Num).to(device)   #网络inputsize=1，输出维数为1
     Loss_Func=torch.nn.CrossEntropyLoss()
     optimizer=torch.optim.RMSprop(model.parameters(),lr=1e-3,alpha=0.9)
     for j in range(turn):
@@ -37,20 +39,22 @@ def train(filepath,batch_size,turn):
             data=np.array(network_input[i:batch_size+i])
             data=np.reshape(data.transpose(),(sequence_length,batch_size,1))    #(seq_len,batch_size,input_size)
             #print(data.shape)
-            input=torch.autograd.Variable(torch.Tensor(data))
+            input1=torch.autograd.Variable(torch.Tensor(data))
             #targets=torch.autograd.Variable(torch.Tensor([int(network_output[i])]))
             #targets =torch.LongTensor(targets)
             targets_data=np.array(network_output[i:i+batch_size])
             targets=torch.tensor(targets_data.transpose(), dtype=torch.long)
-            output=model(input)
+            targets = targets.to(device)
+            input1 = input1.to(device)
+            output=model(input1)
             loss=Loss_Func(output,targets)
             loss.backward()
             optimizer.step()
             if (j*int(len(network_input)/batch_size)+i+1) % 10 == 0: 
                 print('Epoch: {}, Loss:{:.5f}'.format(j*int(len(network_input)/batch_size)+i+1, loss.item())) 
-    torch.save(model,'D:/学习/大四下/人工智能导论/HW/FINAL/code\model.pkl')
+    torch.save(model,'Melody_LSTM/model_1857.pkl')
     return 0
 
 if __name__ == "__main__":
-    filepath='D:/学习/大四下/人工智能导论/HW/FINAL/dataset/simple/simple/'
+    filepath='./simple_data/'
     train(filepath,20,10)  #(filepath,batch_size,turn)
