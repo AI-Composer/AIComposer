@@ -155,7 +155,7 @@ def getStep(noteID, tonicID, tonality):
     """
 
     octave, delta = divmod((noteID - tonicID), 12)
-    if mode == 'major':
+    if tonality == 'major':
         if delta in {1, 3, 6, 8, 10}:
             print("not in tonality warning!")
         return octave * 7 + major_list[int(delta)]
